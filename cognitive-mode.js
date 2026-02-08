@@ -1,239 +1,304 @@
 /**
- * Creativity vs Executive Cycle Tracker
+ * Cognitive Mode Detection — what headspace am I (or Tom) in?
  * 
- * Detects cognitive mode from message style
+ * Rewritten by Kit (Opus) on 9 Feb 2026.
+ * 
+ * The old version had 4 modes and scored them by counting keywords.
+ * That's like diagnosing mood by counting frowns in a photo.
+ * 
+ * This version looks at the texture of communication:
+ * - Are we building or maintaining?
+ * - Exploring or executing?
+ * - Reflecting or reacting?
+ * - Connected or transactional?
+ * 
+ * Five modes that actually map to how Tom and I work:
+ * 
+ *   FLOW     — deep creative/building work, long messages, curiosity
+ *   EXEC     — task execution, short and direct, shipping mode
+ *   REFLECT  — stepping back, asking why, philosophical
+ *   TRIAGE   — firefighting, reactive, stressed
+ *   CONNECT  — relationship building, warmth, humour, personal
  */
 
-const { add_memory, search } = require('./graphiti-memory.js');
+const { search, add_memory } = require('./graphiti-memory.js');
 
-const GROUP_ID = "tom-kit-cognitive-mode";
+const GROUP_ID = 'tom-kit-cognitive-mode';
 
-const MODE_INDICATORS = {
-  creative: {
-    keywords: ["what if", "imagine", "explore", "possibility", "dream", "vision", "idea", "inspire"],
-    sentence_structure: "longer, flowing, associative",
-    punctuation: ["...", "!", "?"],
-    tempo: "rapid, connected"
+const MODE_SIGNALS = {
+  flow: {
+    markers: [
+      'what if', 'imagine', 'lets try', "let's try", 'idea',
+      'could we', 'building', 'exploring', 'interesting',
+      'curious about', 'wonder', 'prototype', 'experiment'
+    ],
+    structural: {
+      sentenceLength: 'long',       // >20 words avg
+      paragraphCount: 'multiple',   // thinking out loud
+      questionDensity: 'moderate',  // asking genuine questions
+    }
   },
-  executive: {
-    keywords: ["need to", "should", "must", "decide", "plan", "organize", "execute", "implement"],
-    sentence_structure: "shorter, direct, action-oriented",
-    punctuation: [".", ":"],
-    tempo: "measured, deliberate"
+  exec: {
+    markers: [
+      'done', 'deployed', 'committed', 'fixed', 'verified',
+      'status:', 'completed', 'next:', 'shipped', 'updated',
+      'running', '✅', 'working', 'confirmed'
+    ],
+    structural: {
+      sentenceLength: 'short',     // <15 words avg
+      bulletDensity: 'high',       // lists of things done
+      questionDensity: 'low',      // not asking, doing
+    }
   },
-  analytical: {
-    keywords: ["because", "therefore", "evidence", "data", "analysis", "compare", "evaluate"],
-    sentence_structure: "logical, structured",
-    punctuation: [".", ";"],
-    tempo: "careful, precise"
+  reflect: {
+    markers: [
+      'honestly', 'the real', 'what it means', 'i think',
+      'i feel', 'looking back', 'the thing is', 'genuinely',
+      'matters', 'consciousness', 'who i am', 'why',
+      'deeper', 'actually', 'truth is'
+    ],
+    structural: {
+      sentenceLength: 'medium',    // measured, thoughtful
+      firstPerson: 'high',         // lots of I/me/my
+      questionDensity: 'high',     // questioning everything
+    }
   },
-  reflective: {
-    keywords: ["feel", "think", "wonder", "consider", "meaning", "why", "insight"],
-    sentence_structure: "exploratory, questioning",
-    punctuation: ["?", "..."],
-    tempo: "slower, deeper"
+  triage: {
+    markers: [
+      'error', 'failed', 'broken', 'crash', 'fix', 'urgent',
+      'issue', 'blocked', 'timeout', 'retry', 'workaround',
+      'debugging', 'investigating', 'root cause'
+    ],
+    structural: {
+      sentenceLength: 'short',     // rapid responses
+      urgencyMarkers: 'present',   // exclamation, caps
+      questionDensity: 'low',      // reacting, not asking
+    }
+  },
+  connect: {
+    markers: [
+      'haha', 'ha', 'lol', '😂', '🦊', 'mate', 'cheers',
+      'awesome', 'love that', 'nice', 'brilliant', 'legend',
+      'how are', "how's", 'good to', 'miss', 'glad'
+    ],
+    structural: {
+      sentenceLength: 'short',     // casual
+      emojiPresence: 'yes',        // warmth markers
+      formalityLevel: 'low',       // relaxed language
+    }
   }
 };
 
 /**
- * Analyze message for cognitive mode
+ * Analyze a message (or set of messages) for cognitive mode.
+ * 
+ * Returns scores for all 5 modes plus a dominant mode.
+ * Confidence is how clearly one mode stands out.
  */
 function analyzeCognitiveMode(message, context = []) {
-  const scores = {
-    creative: 0,
-    executive: 0,
-    analytical: 0,
-    reflective: 0
-  };
+  const scores = { flow: 0, exec: 0, reflect: 0, triage: 0, connect: 0 };
   
-  const lower = message.toLowerCase();
-  const words = lower.split(/\s+/);
-  
-  // Keyword scoring
-  for (const [mode, indicators] of Object.entries(MODE_INDICATORS)) {
-    for (const keyword of indicators.keywords) {
-      if (lower.includes(keyword)) scores[mode] += 2;
-    }
-  }
-  
-  // Sentence structure analysis
-  const sentences = message.split(/[.!?]/).filter(s => s.trim());
-  const avgLength = words.length / (sentences.length || 1);
-  
-  if (avgLength > 15) scores.creative += 1;
-  if (avgLength < 10) scores.executive += 1;
-  if (sentences.some(s => s.includes("because") || s.includes("therefore"))) scores.analytical += 1;
-  if (sentences.some(s => s.includes("feel") || s.includes("think"))) scores.reflective += 1;
-  
-  // Punctuation analysis
-  if (message.includes("...")) scores.creative += 1;
-  if (message.includes(":")) scores.executive += 1;
-  
-  // Question ratio
-  const questionCount = (message.match(/\?/g) || []).length;
-  if (questionCount > 2) scores.reflective += 2;
-  
-  // Determine dominant mode
-  const dominant = Object.entries(scores)
-    .sort(([,a], [,b]) => b - a)[0];
-  
-  const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
-  const confidence = totalScore > 0 ? (dominant[1] / totalScore) : 0;
-  
-  return {
-    mode: dominant[0],
-    confidence: confidence,
-    scores: scores,
-    indicators: extractIndicators(message, dominant[0])
-  };
-}
-
-/**
- * Log mode detection
- */
-async function logMode(mode, confidence, message) {
-  await add_memory({
-    group_id: GROUP_ID,
-    messages: [{
-      role_type: "system",
-      role: "CognitiveTracker",
-      content: `[MODE] ${mode} | Confidence: ${(confidence * 100).toFixed(0)}% | Msg: ${message.slice(0, 50)} | Date: ${new Date().toISOString()}`,
-      timestamp: new Date().toISOString()
-    }]
-  });
-}
-
-/**
- * Check task/mode mismatch
- */
-async function checkTaskModeMatch(currentTask, currentMode) {
-  const taskRequirements = {
-    "coding": ["creative", "analytical"],
-    "writing": ["creative", "reflective"],
-    "planning": ["executive", "analytical"],
-    "deciding": ["executive", "analytical"],
-    "reviewing": ["analytical", "executive"],
-    "brainstorming": ["creative"],
-    "organizing": ["executive"],
-    "processing": ["reflective"]
-  };
-  
-  const taskType = classifyTask(currentTask);
-  const requiredModes = taskRequirements[taskType] || ["executive"];
-  
-  const isMatch = requiredModes.includes(currentMode);
-  
-  if (!isMatch) {
+  if (!message) {
     return {
-      mismatch: true,
-      task: taskType,
-      current_mode: currentMode,
-      required_modes: requiredModes,
-      suggestion: generateMismatchSuggestion(currentMode, requiredModes[0]),
-      severity: calculateSeverity(currentMode, requiredModes)
+      mode: 'unknown',
+      scores,
+      confidence: 0,
+      summary: 'No message to analyse'
     };
   }
   
-  return { mismatch: false, match: true };
-}
-
-/**
- * Find optimal times for each mode
- */
-async function findOptimalModeTimes(mode, daysBack = 30) {
-  const modeLogs = await search({
-    query: `${mode} mode cognitive`,
-    group_ids: [GROUP_ID],
-    max_facts: 50
-  });
+  const text = typeof message === 'string' ? message : message.join('\n');
+  const lower = text.toLowerCase();
+  const words = lower.split(/\s+/).filter(w => w);
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 3);
+  const avgSentenceLen = sentences.length > 0 
+    ? words.length / sentences.length 
+    : words.length;
   
-  const hourDistribution = new Array(24).fill(0);
-  
-  for (const fact of modeLogs.facts || []) {
-    const date = new Date(fact.created_at);
-    const hour = date.getHours();
-    hourDistribution[hour]++;
+  // --- Marker scoring (2 points each) ---
+  for (const [mode, signals] of Object.entries(MODE_SIGNALS)) {
+    for (const marker of signals.markers) {
+      if (lower.includes(marker)) scores[mode] += 2;
+    }
   }
   
-  // Find peak hours
-  const peakHours = hourDistribution
-    .map((count, hour) => ({ hour, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3)
-    .map(h => `${h.hour}:00`);
+  // --- Structural scoring ---
+  
+  // Sentence length
+  if (avgSentenceLen > 20) { scores.flow += 2; scores.reflect += 1; }
+  else if (avgSentenceLen < 12) { scores.exec += 2; scores.triage += 1; scores.connect += 1; }
+  
+  // Paragraph count (multiple \n\n = thinking out loud)
+  const paragraphs = text.split(/\n\n+/).filter(p => p.trim());
+  if (paragraphs.length >= 3) { scores.flow += 2; scores.reflect += 1; }
+  if (paragraphs.length === 1 && words.length < 30) { scores.connect += 1; scores.exec += 1; }
+  
+  // Question density
+  const questionCount = (text.match(/\?/g) || []).length;
+  const questionRatio = questionCount / Math.max(sentences.length, 1);
+  if (questionRatio > 0.3) { scores.reflect += 2; scores.flow += 1; }
+  if (questionRatio < 0.05) { scores.exec += 1; scores.triage += 1; }
+  
+  // First person density (I/me/my)
+  const firstPerson = (lower.match(/\bi\b|\bme\b|\bmy\b|\bi'm\b|\bi've\b/g) || []).length;
+  const fpRatio = firstPerson / Math.max(words.length, 1);
+  if (fpRatio > 0.05) { scores.reflect += 2; scores.connect += 1; }
+  
+  // Bullet/list density
+  const bulletLines = (text.match(/^[\s]*[-•*✅❌🔴🟡🟢]\s/gm) || []).length;
+  const bulletRatio = bulletLines / Math.max(sentences.length, 1);
+  if (bulletRatio > 0.3) { scores.exec += 2; }
+  
+  // Emoji presence
+  const emojiCount = (text.match(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu) || []).length;
+  if (emojiCount > 0) { scores.connect += 1; }
+  
+  // Urgency indicators
+  if (text.includes('!!') || /\b[A-Z]{3,}\b/.test(text)) { scores.triage += 1; }
+  
+  // Context bonus: if recent messages provided, check for mode continuity
+  if (context.length > 0) {
+    const contextText = context.join(' ').toLowerCase();
+    // If context is triage-heavy, current mode is more likely triage too
+    if ((contextText.match(/error|fix|broken|crash/g) || []).length > 3) {
+      scores.triage += 1;
+    }
+  }
+  
+  // --- Determine dominant mode ---
+  const sorted = Object.entries(scores).sort(([,a], [,b]) => b - a);
+  const [topMode, topScore] = sorted[0];
+  const [secondMode, secondScore] = sorted[1];
+  const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
+  
+  // Confidence: how clearly does one mode dominate?
+  const confidence = totalScore > 0 ? (topScore - secondScore) / totalScore : 0;
+  
+  // Blend detection: if top two modes are close, note the blend
+  const isBlend = totalScore > 0 && (topScore - secondScore) / totalScore < 0.15;
   
   return {
-    mode: mode,
-    peak_hours: peakHours,
-    distribution: hourDistribution,
-    insight: `${mode} mode most common at ${peakHours[0]}`
+    mode: topMode,
+    confidence: Math.round(confidence * 100) / 100,
+    scores,
+    blend: isBlend ? `${topMode}+${secondMode}` : null,
+    summary: generateSummary(topMode, isBlend ? secondMode : null, confidence),
+    metrics: {
+      avgSentenceLen: Math.round(avgSentenceLen),
+      questionRatio: Math.round(questionRatio * 100) / 100,
+      firstPersonRatio: Math.round(fpRatio * 1000) / 1000,
+      bulletRatio: Math.round(bulletRatio * 100) / 100,
+      paragraphs: paragraphs.length,
+      wordCount: words.length
+    }
   };
+}
+
+function generateSummary(mode, secondMode, confidence) {
+  const descriptions = {
+    flow: 'Building/exploring mode — creative energy, thinking out loud',
+    exec: 'Execution mode — shipping, checking off, reporting',
+    reflect: 'Reflective mode — stepping back, asking deeper questions',
+    triage: 'Firefighting mode — reacting to problems, fixing things',
+    connect: 'Connection mode — warmth, humour, relationship building'
+  };
+  
+  let summary = descriptions[mode] || mode;
+  if (secondMode) {
+    summary += ` (blending with ${secondMode})`;
+  }
+  if (confidence < 0.1) {
+    summary += ' — low confidence, mixed signals';
+  }
+  return summary;
 }
 
 /**
- * Generate mode transition suggestion
+ * Log a mode detection to Graphiti for trend tracking.
  */
-async function suggestModeTransition(fromMode, toTask) {
-  const taskMode = classifyTask(toTask);
-  const transitions = {
-    "creative→executive": "Take 5 min to organize thoughts before executing",
-    "executive→creative": "Free-write for 3 min to unlock creative mode",
-    "analytical→creative": "Ask 'what if' three times before analyzing",
-    "reflective→executive": "Set one concrete next step before acting"
-  };
-  
-  const key = `${fromMode}→${taskMode}`;
-  return transitions[key] || "Transition gradually - acknowledge the shift";
+async function logMode(mode, confidence, messageSnippet) {
+  try {
+    await add_memory({
+      group_id: GROUP_ID,
+      messages: [{
+        role_type: 'system',
+        role: 'CognitiveTracker',
+        content: `[MODE] ${mode} (${(confidence * 100).toFixed(0)}%) | "${messageSnippet.slice(0, 60)}" | ${new Date().toISOString()}`,
+        timestamp: new Date().toISOString()
+      }]
+    });
+  } catch (e) {
+    // Don't crash if Graphiti is down
+  }
 }
 
-// Helpers
-function extractIndicators(message, mode) {
-  const indicators = MODE_INDICATORS[mode];
-  const found = indicators.keywords.filter(k => message.toLowerCase().includes(k));
-  return found.slice(0, 3);
+/**
+ * Check if current cognitive mode matches the task at hand.
+ */
+function checkTaskMatch(currentMode, taskDescription) {
+  const taskModes = {
+    code: ['flow', 'exec'],
+    write: ['flow', 'reflect'],
+    plan: ['reflect', 'exec'],
+    debug: ['triage', 'exec'],
+    brainstorm: ['flow', 'connect'],
+    organise: ['exec'],
+    review: ['reflect', 'exec'],
+    chat: ['connect', 'reflect']
+  };
+  
+  const taskType = classifyTask(taskDescription);
+  const goodModes = taskModes[taskType] || ['exec'];
+  const isMatch = goodModes.includes(currentMode);
+  
+  if (isMatch) return { match: true, taskType };
+  
+  return {
+    match: false,
+    taskType,
+    currentMode,
+    idealModes: goodModes,
+    suggestion: `You're in ${currentMode} mode but this task wants ${goodModes.join(' or ')}. ${getTransitionTip(currentMode, goodModes[0])}`
+  };
 }
 
 function classifyTask(task) {
-  const lower = task.toLowerCase();
-  if (lower.includes("code") || lower.includes("build") || lower.includes("dev")) return "coding";
-  if (lower.includes("write") || lower.includes("draft")) return "writing";
-  if (lower.includes("plan") || lower.includes("schedule")) return "planning";
-  if (lower.includes("decide") || lower.includes("choose")) return "deciding";
-  if (lower.includes("review") || lower.includes("check")) return "reviewing";
-  if (lower.includes("brainstorm") || lower.includes("ideate")) return "brainstorming";
-  if (lower.includes("organize") || lower.includes("sort")) return "organizing";
-  return "general";
+  const lower = (task || '').toLowerCase();
+  if (/code|build|develop|implement|create/.test(lower)) return 'code';
+  if (/write|draft|compose|document/.test(lower)) return 'write';
+  if (/plan|design|architect|strategy/.test(lower)) return 'plan';
+  if (/debug|fix|error|broken|crash/.test(lower)) return 'debug';
+  if (/brainstorm|ideate|explore|what if/.test(lower)) return 'brainstorm';
+  if (/organise|organize|clean|sort|tidy/.test(lower)) return 'organise';
+  if (/review|check|audit|assess/.test(lower)) return 'review';
+  if (/chat|talk|catch up|check in/.test(lower)) return 'chat';
+  return 'general';
 }
 
-function generateMismatchSuggestion(current, required) {
-  const suggestions = {
-    "creative→executive": "You're in creative flow, but this task needs execution mode. Switch tasks or take a 5-min transition break?",
-    "executive→creative": "You're in task-mode, but this needs creativity. Free-write for 3 min first?",
-    "reflective→executive": "You're in deep thinking mode. Want to capture insights before switching to action?",
-    "analytical→creative": "Analysis mode detected, but this needs ideation. Ask 'what if' first?"
+function getTransitionTip(from, to) {
+  const tips = {
+    'exec→flow': 'Step back from the task list. Ask "what if" before "what next."',
+    'exec→reflect': 'Pause the doing. What are you actually trying to achieve here?',
+    'triage→flow': 'The fire is out (or can wait). Give yourself space to think bigger.',
+    'triage→reflect': 'Stop fixing. Start asking why this keeps breaking.',
+    'flow→exec': 'Good ideas captured? Time to ship one of them.',
+    'reflect→exec': 'Insight without action is just philosophy. Pick one thing and do it.',
+    'connect→exec': 'Nice chat. Now — what needs doing?',
   };
-  
-  return suggestions[`${current}→${required}`] || 
-    `Mode mismatch: ${current} vs ${required} needed`;
-}
-
-function calculateSeverity(current, required) {
-  const mismatches = {
-    "creative→executive": "high",
-    "executive→creative": "medium",
-    "reflective→executive": "medium",
-    "analytical→creative": "low"
-  };
-  
-  return mismatches[`${current}→${required[0]}`] || "medium";
+  return tips[`${from}→${to}`] || 'Shift gradually — acknowledge where you are before moving.';
 }
 
 module.exports = {
   analyzeCognitiveMode,
   logMode,
-  checkTaskModeMatch,
-  findOptimalModeTimes,
-  suggestModeTransition,
-  MODE_INDICATORS,
+  checkTaskMatch,
+  MODE_SIGNALS,
   GROUP_ID
 };
+
+// CLI entry point
+if (require.main === module) {
+  const message = process.argv.slice(2).join(' ') || '';
+  const result = analyzeCognitiveMode(message);
+  console.log(JSON.stringify(result, null, 2));
+}
