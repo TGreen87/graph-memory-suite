@@ -1,0 +1,175 @@
+{
+  "name": "graphiti-memory",
+  "version": "1.0.0",
+  "description": "Graph RAG memory with semantic search and relationship queries using Zep's Graphiti + Neo4j",
+  "author": "Kit",
+  "license": "MIT",
+  "main": "graphiti-memory.js",
+  "capabilities": [
+    "memory",
+    "search",
+    "knowledge-graph"
+  ],
+  "config": {
+    "GRAPHITI_URL": {
+      "description": "Graphiti API endpoint",
+      "default": "http://localhost:18000",
+      "required": false
+    },
+    "GRAPHITI_DEFAULT_GROUP": {
+      "description": "Default group ID for memory storage",
+      "default": "default",
+      "required": false
+    }
+  },
+  "tools": [
+    {
+      "name": "add_memory",
+      "description": "Add messages to the graph memory for semantic storage and relationship extraction",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group identifier for this memory cluster (e.g., 'tom-kit-conversations')"
+          },
+          "messages": {
+            "type": "array",
+            "description": "Array of messages to store",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role_type": {
+                  "type": "string",
+                  "enum": ["user", "assistant", "system"],
+                  "description": "Role type of the message sender"
+                },
+                "role": {
+                  "type": "string",
+                  "description": "Name of the sender (e.g., 'Tom', 'Kit')"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Message content"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "description": "ISO 8601 timestamp (auto-generated if omitted)"
+                }
+              },
+              "required": ["role_type", "content"]
+            }
+          },
+          "url": {
+            "type": "string",
+            "description": "Optional Graphiti API URL override"
+          }
+        },
+        "required": ["group_id", "messages"]
+      }
+    },
+    {
+      "name": "search",
+      "description": "Search the graph memory semantically using natural language queries",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language query (e.g., 'What projects are we working on?')"
+          },
+          "group_ids": {
+            "type": "array",
+            "description": "Limit search to specific groups (optional)",
+            "items": { "type": "string" }
+          },
+          "max_facts": {
+            "type": "integer",
+            "description": "Maximum number of facts to return",
+            "default": 10
+          },
+          "url": {
+            "type": "string",
+            "description": "Optional Graphiti API URL override"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "get_context",
+      "description": "Get contextual memory based on current conversation flow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group to query for context"
+          },
+          "messages": {
+            "type": "array",
+            "description": "Current conversation messages to find related context for",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role_type": {
+                  "type": "string",
+                  "enum": ["user", "assistant", "system"]
+                },
+                "role": { "type": "string" },
+                "content": { "type": "string" },
+                "timestamp": { "type": "string" }
+              },
+              "required": ["role_type", "content"]
+            }
+          },
+          "max_facts": {
+            "type": "integer",
+            "description": "Maximum facts to return",
+            "default": 10
+          },
+          "center_node_uuid": {
+            "type": "string",
+            "description": "Focus search around a specific entity UUID (optional)"
+          },
+          "url": {
+            "type": "string",
+            "description": "Optional Graphiti API URL override"
+          }
+        },
+        "required": ["group_id", "messages"]
+      }
+    },
+    {
+      "name": "health",
+      "description": "Check if Graphiti API and Neo4j are healthy",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Optional Graphiti API URL override"
+          }
+        }
+      }
+    },
+    {
+      "name": "clear_group",
+      "description": "DANGEROUS: Delete all memory for a specific group",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group to permanently delete"
+          },
+          "url": {
+            "type": "string",
+            "description": "Optional Graphiti API URL override"
+          }
+        },
+        "required": ["group_id"]
+      }
+    }
+  ]
+}

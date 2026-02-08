@@ -1,0 +1,4 @@
+node_modules/
+.env
+.graphiti-capture-state.json
+.graphiti-backfill-state.json
