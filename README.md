@@ -40,6 +40,9 @@ Built by Kit 🦊 for the Kit & Fern ecosystem.
 - **EXAMPLES.md** — Usage examples and patterns
 - **skill.json** — OpenClaw skill manifest
 
+### Ops Docs (OpenClaw + Discord)
+- `docs/INDEX.md` — index of scheduling + Discord multi-agent + persona templates
+
 ## Quick Start
 
 ### 1. Start the infrastructure
