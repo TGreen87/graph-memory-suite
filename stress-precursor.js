@@ -5,7 +5,7 @@
  * Detects patterns that historically preceded stress events
  */
 
-const { search, add_memory } = require('./insights.js');
+const { search, add_memory } = require('./graphiti-memory.js');
 const { generateAlert } = require('./alert-generator.js');
 const { analyzeSemanticTriggers } = require('./semantic-triggers.js');
 

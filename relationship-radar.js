@@ -5,7 +5,7 @@
  * Prevents relationship drift through proactive alerts
  */
 
-const { search, add_memory } = require('./insights.js');
+const { search, add_memory } = require('./graphiti-memory.js');
 const { generateAlert } = require('./alert-generator.js');
 
 const GROUP_ID = "tom-kit-relationships";

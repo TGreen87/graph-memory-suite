@@ -4,7 +4,7 @@
  * Discovers what actually recharges Tom by testing interventions
  */
 
-const { add_memory, search } = require('./insights.js');
+const { add_memory, search } = require('./graphiti-memory.js');
 
 const GROUP_ID = "tom-kit-recovery";
 

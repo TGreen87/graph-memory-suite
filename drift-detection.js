@@ -5,7 +5,7 @@
  * Implements the "every X minutes self-reflection" pattern
  */
 
-const { search } = require('./insights.js');
+const { search } = require('./graphiti-memory.js');
 
 const BASELINE = {
   warmth: 8.5,           // 1-10, conversational warmth

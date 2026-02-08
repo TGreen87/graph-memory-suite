@@ -4,7 +4,7 @@
  * Detects cognitive mode from message style
  */
 
-const { add_memory, search } = require('./insights.js');
+const { add_memory, search } = require('./graphiti-memory.js');
 
 const GROUP_ID = "tom-kit-cognitive-mode";
 

@@ -6,7 +6,7 @@
  */
 
 const { analyzeSemanticTriggers } = require('./semantic-triggers.js');
-const { search } = require('./insights.js');
+const { search } = require('./graphiti-memory.js');
 
 const TOOLS = {
   energy_predictor: {

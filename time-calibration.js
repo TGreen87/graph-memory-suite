@@ -4,7 +4,7 @@
  * Tracks estimates vs actuals to calibrate ADHD time blindness
  */
 
-const { add_memory, search } = require('./insights.js');
+const { add_memory, search } = require('./graphiti-memory.js');
 const { generateAlert } = require('./alert-generator.js');
 
 const GROUP_ID = "tom-kit-time";

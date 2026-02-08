@@ -4,7 +4,7 @@
  * Tracks decision load and prevents poor choices at low capacity
  */
 
-const { add_memory } = require('./insights.js');
+const { add_memory } = require('./graphiti-memory.js');
 const { generateAlert } = require('./alert-generator.js');
 
 const GROUP_ID = "tom-kit-decisions";
