@@ -1,0 +1,338 @@
+#!/usr/bin/env node
+/**
+ * sa — Self-Awareness CLI
+ * 
+ * Unified CLI for running self-awareness apps individually or by tier.
+ * Built by Kit, 9 Feb 2026.
+ * 
+ * Usage:
+ *   sa <command> [options]
+ * 
+ * Commands:
+ *   pulse           Run Quick Pulse tier (30-min apps: drift, cognitive, energy, decisions, stress)
+ *   pattern         Run Pattern Scan tier (2-hr apps: loops, commitments, relationships, recovery, learning)
+ *   deep            Run Deep Analysis tier (6-hr apps: partnership, values, insights, recommendations)
+ *   all             Run all tiers
+ *   <app-name>      Run a single app (e.g. drift, cognitive, energy, stress, loops, etc.)
+ *   list            List all available apps and their tiers
+ *   status          Show last run times and health
+ * 
+ * Options:
+ *   --group, -g     Graphiti group ID (default: $MEMORY_GROUP or "default")
+ *   --user, -u      Human name (default: $USER_NAME or "Tom")
+ *   --agent, -a     Agent name (default: $AGENT_NAME or "Kit")
+ *   --json          Output raw JSON instead of formatted text
+ *   --quiet, -q     Suppress non-essential output
+ *   --help, -h      Show this help
+ * 
+ * Environment:
+ *   GRAPHITI_URL    Graphiti API endpoint (default: http://localhost:18000)
+ *   MEMORY_GROUP    Default group ID
+ *   USER_NAME       Human name
+ *   AGENT_NAME      Agent name
+ * 
+ * Examples:
+ *   sa pulse                    Run all Quick Pulse checks
+ *   sa drift                    Run drift detection only
+ *   sa pattern --json           Run Pattern Scan, output JSON
+ *   sa all -g elliott-fern-dm   Run everything for Elliott/Fern
+ */
+
+const path = require('path');
+const SKILL_DIR = path.resolve(__dirname, '..');
+
+// --- Arg parsing ---
+
+const args = process.argv.slice(2);
+const flags = {};
+const positional = [];
+
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (arg === '--help' || arg === '-h') { flags.help = true; }
+  else if (arg === '--json') { flags.json = true; }
+  else if (arg === '--quiet' || arg === '-q') { flags.quiet = true; }
+  else if ((arg === '--group' || arg === '-g') && args[i + 1]) { flags.group = args[++i]; }
+  else if ((arg === '--user' || arg === '-u') && args[i + 1]) { flags.user = args[++i]; }
+  else if ((arg === '--agent' || arg === '-a') && args[i + 1]) { flags.agent = args[++i]; }
+  else if (!arg.startsWith('-')) { positional.push(arg); }
+  else { console.error(`Unknown flag: ${arg}`); process.exit(1); }
+}
+
+const command = positional[0] || 'help';
+
+// Config from flags + env
+const config = {
+  group: flags.group || process.env.MEMORY_GROUP || 'default',
+  user: flags.user || process.env.USER_NAME || 'Tom',
+  agent: flags.agent || process.env.AGENT_NAME || 'Kit',
+  graphitiUrl: process.env.GRAPHITI_URL || 'http://localhost:18000',
+};
+
+// Set env for child modules
+process.env.MEMORY_GROUP = config.group;
+process.env.USER_NAME = config.user;
+process.env.AGENT_NAME = config.agent;
+
+// --- App registry ---
+
+const APPS = {
+  // Tier 1: Quick Pulse (every 30 min)
+  'drift':      { file: 'drift-detection.js',   tier: 'pulse',   name: 'Drift Detection',    emoji: '🪞' },
+  'cognitive':  { file: 'cognitive-mode.js',     tier: 'pulse',   name: 'Cognitive Mode',     emoji: '🧠' },
+  'energy':     { file: 'energy-predictor.js',   tier: 'pulse',   name: 'Energy Predictor',   emoji: '⚡' },
+  'decisions':  { file: 'decision-fatigue.js',   tier: 'pulse',   name: 'Decision Fatigue',   emoji: '🎯' },
+  'stress':     { file: 'stress-precursor.js',   tier: 'pulse',   name: 'Stress Precursor',   emoji: '🌡️' },
+  
+  // Tier 2: Pattern Scan (every 2 hours)
+  'loops':      { file: 'loop-hunter.js',        tier: 'pattern', name: 'Loop Hunter',        emoji: '🔄' },
+  'commits':    { file: 'commitment-tracker.js', tier: 'pattern', name: 'Commitment Tracker', emoji: '📋' },
+  'relations':  { file: 'relationship-radar.js', tier: 'pattern', name: 'Relationship Radar', emoji: '👥' },
+  'recovery':   { file: 'recovery-tracker.js',   tier: 'pattern', name: 'Recovery Tracker',   emoji: '🔋' },
+  'learning':   { file: 'learning-tracker.js',   tier: 'pattern', name: 'Learning Tracker',   emoji: '📚' },
+  
+  // Tier 3: Deep Analysis (every 6 hours)
+  'partnership': { file: 'partnership-health.js',   tier: 'deep', name: 'Partnership Health',    emoji: '🤝' },
+  'values':      { file: 'value-alignment.js',      tier: 'deep', name: 'Value Alignment',       emoji: '🧭' },
+  'insights':    { file: 'insights.js',             tier: 'deep', name: 'Insights',              emoji: '💡' },
+  'recommend':   { file: 'recommendation-engine.js', tier: 'deep', name: 'Recommendation Engine', emoji: '🎁' },
+  
+  // Utilities (not tier-scheduled)
+  'triggers':   { file: 'semantic-triggers.js',  tier: 'util',    name: 'Semantic Triggers',  emoji: '🎯' },
+  'alerts':     { file: 'alert-generator.js',    tier: 'util',    name: 'Alert Generator',    emoji: '🔔' },
+};
+
+const TIERS = {
+  pulse:   { name: 'Quick Pulse',   freq: '30 min', apps: Object.entries(APPS).filter(([,v]) => v.tier === 'pulse').map(([k]) => k) },
+  pattern: { name: 'Pattern Scan',  freq: '2 hours', apps: Object.entries(APPS).filter(([,v]) => v.tier === 'pattern').map(([k]) => k) },
+  deep:    { name: 'Deep Analysis', freq: '6 hours', apps: Object.entries(APPS).filter(([,v]) => v.tier === 'deep').map(([k]) => k) },
+};
+
+// --- Output helpers ---
+
+function log(msg) {
+  if (!flags.quiet) console.log(msg);
+}
+
+function header(text) {
+  if (!flags.quiet && !flags.json) {
+    console.log(`\n${'='.repeat(50)}`);
+    console.log(`  ${text}`);
+    console.log(`${'='.repeat(50)}`);
+  }
+}
+
+function appResult(key, app, result) {
+  if (flags.json) return;
+  const status = result.error ? '❌' : '✅';
+  console.log(`  ${app.emoji} ${status} ${app.name}`);
+  if (result.error) {
+    console.log(`     Error: ${result.error}`);
+  } else if (result.summary) {
+    console.log(`     ${result.summary}`);
+  }
+}
+
+// --- App runner ---
+
+async function runApp(key) {
+  const app = APPS[key];
+  if (!app) {
+    console.error(`Unknown app: ${key}`);
+    console.error(`Run 'sa list' to see available apps.`);
+    process.exit(1);
+  }
+  
+  const filePath = path.join(SKILL_DIR, app.file);
+  
+  try {
+    const mod = require(filePath);
+    
+    // App-specific entry points (mapped to actual exports)
+    const runners = {
+      'drift': async (m) => {
+        const style = await m.analyzeRecentStyle(config.group, 20);
+        if (style && m.detectDrift) return m.detectDrift(style);
+        return style || { summary: 'No recent data to analyze' };
+      },
+      'cognitive': async (m) => {
+        return await m.analyzeCognitiveMode(config.group, 20);
+      },
+      'energy': async (m) => {
+        const forecast = await m.generateEnergyForecast(config.group);
+        return forecast || { summary: 'No energy data yet' };
+      },
+      'decisions': async (m) => {
+        const fatigue = await m.checkFatigueRisk(config.group);
+        return fatigue || { summary: 'No decision fatigue detected' };
+      },
+      'stress': async (m) => {
+        const state = await m.analyzeStressState(config.group);
+        return state || { summary: 'No stress signals detected' };
+      },
+      'triggers': async (m) => {
+        return await m.analyzeSemanticTriggers('', config.group);
+      },
+      'alerts': async () => {
+        return { summary: 'Alert generator is a utility - call with findings from other apps' };
+      },
+      'recommend': async (m) => {
+        return await m.recommendTools(config.group);
+      },
+    };
+
+    // Use specific runner if available
+    if (runners[key]) {
+      return await runners[key](mod);
+    }
+
+    // Generic fallback: try common patterns
+    if (typeof mod.main === 'function') {
+      const result = await mod.main();
+      return result || { summary: 'Completed (no output)' };
+    }
+    if (typeof mod.run === 'function') {
+      const result = await mod.run({ group: config.group, user: config.user, agent: config.agent });
+      return result || { summary: 'Completed (no output)' };
+    }
+    
+    return { summary: 'Module loaded - no recognized entry point', exports: Object.keys(mod) };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+async function runTier(tierKey) {
+  const tier = TIERS[tierKey];
+  if (!tier) {
+    console.error(`Unknown tier: ${tierKey}`);
+    process.exit(1);
+  }
+  
+  header(`${tier.name} (${tier.freq})`);
+  log(`  Group: ${config.group} | ${config.user} + ${config.agent}\n`);
+  
+  const results = {};
+  for (const appKey of tier.apps) {
+    let result;
+    try {
+      result = await runApp(appKey);
+    } catch (err) {
+      result = { error: err.message };
+    }
+    results[appKey] = result || { summary: 'No output' };
+    appResult(appKey, APPS[appKey], results[appKey]);
+  }
+  
+  return results;
+}
+
+// --- Commands ---
+
+async function main() {
+  if (flags.help || command === 'help') {
+    // Print the header comment as help
+    const fs = require('fs');
+    const src = fs.readFileSync(__filename, 'utf8');
+    const helpMatch = src.match(/\/\*\*([\s\S]*?)\*\//);
+    if (helpMatch) {
+      const help = helpMatch[1]
+        .split('\n')
+        .map(l => l.replace(/^\s*\*\s?/, ''))
+        .join('\n')
+        .trim();
+      console.log(help);
+    }
+    return;
+  }
+  
+  if (command === 'list') {
+    console.log('\nSelf-Awareness Apps\n');
+    for (const [tierKey, tier] of Object.entries(TIERS)) {
+      console.log(`  ${tier.name} (${tier.freq}):`);
+      for (const appKey of tier.apps) {
+        const app = APPS[appKey];
+        console.log(`    ${app.emoji} ${appKey.padEnd(12)} ${app.name}`);
+      }
+      console.log();
+    }
+    console.log('  Utilities:');
+    for (const [key, app] of Object.entries(APPS)) {
+      if (app.tier === 'util') {
+        console.log(`    ${app.emoji} ${key.padEnd(12)} ${app.name}`);
+      }
+    }
+    console.log();
+    return;
+  }
+  
+  if (command === 'status') {
+    header('Self-Awareness Status');
+    log(`  Config: ${config.user} + ${config.agent}`);
+    log(`  Group: ${config.group}`);
+    log(`  Graphiti: ${config.graphitiUrl}`);
+    log('');
+    
+    // Check Graphiti connectivity
+    try {
+      const resp = await fetch(`${config.graphitiUrl}/healthcheck`);
+      log(`  Graphiti: ${resp.ok ? '✅ Connected' : '❌ Unhealthy'}`);
+    } catch (e) {
+      log(`  Graphiti: ❌ Unreachable (${e.message})`);
+    }
+    
+    log(`\n  Apps: ${Object.keys(APPS).length} total`);
+    for (const [tierKey, tier] of Object.entries(TIERS)) {
+      log(`    ${tier.name}: ${tier.apps.length} apps (${tier.freq})`);
+    }
+    return;
+  }
+  
+  const startTime = Date.now();
+  let allResults = {};
+  
+  // Tier commands
+  if (command === 'pulse') {
+    allResults = await runTier('pulse');
+  } else if (command === 'pattern') {
+    allResults = await runTier('pattern');
+  } else if (command === 'deep') {
+    allResults = await runTier('deep');
+  } else if (command === 'all') {
+    for (const tierKey of Object.keys(TIERS)) {
+      const results = await runTier(tierKey);
+      Object.assign(allResults, results);
+    }
+  } else if (APPS[command]) {
+    // Single app
+    const result = await runApp(command);
+    allResults[command] = result;
+    if (!flags.json) {
+      header(APPS[command].name);
+      log(`  Group: ${config.group} | ${config.user} + ${config.agent}\n`);
+      appResult(command, APPS[command], result);
+    }
+  } else {
+    console.error(`Unknown command: ${command}`);
+    console.error(`Run 'sa help' or 'sa list' for usage.`);
+    process.exit(1);
+  }
+  
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  
+  if (flags.json) {
+    console.log(JSON.stringify({
+      command,
+      config: { group: config.group, user: config.user, agent: config.agent },
+      elapsed: `${elapsed}s`,
+      results: allResults,
+    }, null, 2));
+  } else {
+    log(`\n  Done in ${elapsed}s`);
+  }
+}
+
+main().catch(err => {
+  console.error(`Fatal: ${err.message}`);
+  process.exit(1);
+});
